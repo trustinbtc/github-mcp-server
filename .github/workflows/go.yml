@@ -42,3 +42,38 @@ jobs:
 
       - name: Build
         run: go build -v ./cmd/github-mcp-server
+
+      # Coverage is only generated and uploaded from one matrix leg (ubuntu-latest)
+      # to avoid duplicate reports; script/test already produces coverage.out.
+      - name: Convert coverage to Cobertura format
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          go install github.com/boumenot/gocover-cobertura@v1.5.0
+          gocover-cobertura < coverage.out > coverage.xml
+
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-go
+          path: coverage.xml
+
+  upload-coverage-go:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      code-quality: write
+      pull-requests: read
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-report-go
+      - uses: actions/upload-code-coverage@v1
+        with:
+          file: coverage.xml
+          language: Go
+          label: code-coverage-agent
